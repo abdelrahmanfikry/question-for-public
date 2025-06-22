@@ -1421,47 +1421,58 @@ async function saveScore() {
     }
 }
 
+// حذف النتيجة من Firestore
+async function deleteScoreFromFirestore(docId) {
+    const db = window.firestore;
+    console.log('Trying to delete docId:', docId);
+    await db.collection("leaderboard").doc(docId).delete();
+}
+
 // تحديث قائمة المتصدرين
 async function updateLeaderboard() {
     elements.leaderboardElements.leaderboardList.innerHTML = '<p>جاري تحميل النتائج...</p>';
-    
     try {
         await loadLeaderboard();
-        
         if (gameState.leaderboard.length === 0) {
             elements.leaderboardElements.leaderboardList.innerHTML = '<p>لا توجد نتائج مسجلة بعد</p>';
             return;
         }
-        
         elements.leaderboardElements.leaderboardList.innerHTML = '';
-        
         gameState.leaderboard.forEach((entry, index) => {
             const scoreItem = document.createElement('div');
             scoreItem.className = 'leaderboard-item';
-            
             if (entry.name === gameState.playerName) {
                 scoreItem.style.fontWeight = 'bold';
                 scoreItem.style.color = 'var(--primary-color)';
             }
-            
             scoreItem.innerHTML = `
                 <strong>${index + 1}. ${entry.name}</strong>
                 <div>النقاط: ${entry.score} (${entry.correct}/${entry.total})</div>
                 <small>${entry.date}</small>
-                <button class="delete-btn" data-index="${index}">×</button>
+                <button class="delete-btn" data-id="${entry.id}" data-index="${index}">×</button>
             `;
-            
             elements.leaderboardElements.leaderboardList.appendChild(scoreItem);
         });
-        
         // إضافة مستمعي الأحداث لأزرار الحذف
         document.querySelectorAll('.delete-btn').forEach(btn => {
-            btn.addEventListener('click', function(e) {
+            btn.addEventListener('click', async function(e) {
                 e.stopPropagation();
                 const password = prompt('أدخل كلمة المرور للحذف:');
                 if (password === DELETE_PASSWORD) {
-                    const index = parseInt(this.dataset.index);
-                    deleteScore(index);
+                    const docId = this.dataset.id;
+                    if (docId) {
+                        try {
+                            await deleteScoreFromFirestore(docId);
+                            await loadLeaderboard();
+                            await updateLeaderboard();
+                            alert('تم حذف النتيجة بنجاح');
+                        } catch (err) {
+                            alert('حدث خطأ أثناء الحذف: ' + err.message);
+                            console.error(err);
+                        }
+                    } else {
+                        alert('لا يمكن حذف هذه النتيجة (لا يوجد معرف)');
+                    }
                 } else {
                     alert('كلمة المرور غير صحيحة');
                 }
@@ -1566,5 +1577,8 @@ async function getLeaderboardFromFirestore() {
         .orderBy("score", "desc")
         .limit(10)
         .get();
-    return snapshot.docs.map(doc => doc.data());
+    return snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+    }));
 }
